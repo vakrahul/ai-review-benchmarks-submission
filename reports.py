@@ -84,3 +84,19 @@ def summary(db):
         "SELECT count(delivered_at), count(*) - count(delivered_at) FROM deliveries"
     ).fetchone()
     return {"delivered": sent, "pending": waiting}
+
+
+def query_analytics_pipeline(db, columns=("id", "report", "scheduled_at"), sort_by="scheduled_at", sink_url=None):
+    """Executes dynamic analytical query projection and optionally dispatches to webhook sink."""
+    from analytics import DynamicQueryCompiler, WebhookDeliveryDispatcher
+
+    compiler = DynamicQueryCompiler()
+    query, params = compiler.build_filtered_query(columns=columns, sort_by=sort_by)
+    results = db.execute(query, params).fetchall()
+
+    if sink_url:
+        dispatcher = WebhookDeliveryDispatcher()
+        dispatcher.dispatch_payload(sink_url, {"records": results, "count": len(results)})
+
+    return results
+
