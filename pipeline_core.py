@@ -500,14 +500,16 @@ class EventStore:
             rows = self._conn.execute(sql, (tenant, limit)).fetchall()
         return [_row_to_dict(r) for r in rows]
 
-    def transition(self, event_id: int, expected: int, new: int) -> bool:
-        """Optimistic phase update; True only if this caller won the race."""
+    def transition(self, tenant: str, event_id: int, expected: int, new: int) -> bool:
+        """Optimistic phase update; True only if this caller won the race within tenant scope."""
+        if not tenant:
+            raise ValueError("tenant is required")
         if new < 0 or new & ~ALL_BITS:
             raise ValueError("invalid phase value")
         with self._lock:
             cur = self._conn.execute(
-                "UPDATE events SET phase = ? WHERE id = ? AND phase = ?",
-                (new, event_id, expected),
+                "UPDATE events SET phase = ? WHERE id = ? AND phase = ? AND tenant = ?",
+                (new, event_id, expected, tenant),
             )
             return cur.rowcount == 1
 
@@ -883,7 +885,7 @@ def replay(
             except Exception:
                 ok = False
             machine.apply("deliver" if ok else "fail")
-            if not store.transition(event["id"], NEW, machine.state):
+            if not store.transition(tenant, event["id"], NEW, machine.state):
                 stats.skipped += 1
             elif ok:
                 stats.delivered += 1
@@ -970,8 +972,9 @@ def _check_store() -> None:
             raise AssertionError("malformed cursor accepted")
         ids = [e["id"] for e in store.list_recent("t1", newest_first=False, limit=3)]
         assert ids == [1, 2, 3]
-        assert store.transition(1, NEW, VALIDATED)
-        assert not store.transition(1, NEW, VALIDATED)
+        assert store.transition("t1", 1, NEW, VALIDATED)
+        assert not store.transition("t1", 1, NEW, VALIDATED)
+        assert not store.transition("t2", 1, NEW, VALIDATED)
         batches = list(store.ordered_batches("t1", 10))
         assert [len(b) for b in batches] == [10, 10, 5]
         stats = replay(store, "t1", lambda ev: ev["payload"]["n"] % 2 == 0)

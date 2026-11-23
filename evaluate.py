@@ -1,4 +1,4 @@
-"""evaluate.py: Automated benchmark scoring and provider comparison CLI.
+"""evaluate.py: Empirical benchmark scorecard comparing automated AI code review systems.
 
 Usage:
     python evaluate.py
@@ -11,110 +11,149 @@ from dataclasses import dataclass
 from typing import List
 
 
-@dataclass
-class TestCaseResult:
+@dataclass(frozen=True)
+class DefectEvaluation:
     case_id: str
-    scenario: str
-    defect_type: str
-    proofline: str
-    greptile: str
-    coderabbit: str
+    target_component: str
+    defect_classification: str
+    description: str
+    proofline_result: str
+    greptile_result: str
+    coderabbit_result: str
 
 
-BENCHMARK_SUITE: List[TestCaseResult] = [
-    TestCaseResult(
+EVALUATIONS: List[DefectEvaluation] = [
+    # --- Official Seed Cases ---
+    DefectEvaluation(
         "Case 01",
-        "Page report history by scheduled time",
-        "Compound cursor skip on tied timestamps",
-        "CAUGHT (True Pos)",
-        "CAUGHT (True Pos)",
-        "CAUGHT (True Pos)",
+        "reports.history",
+        "Planted Algorithmic",
+        "Compound cursor tie-breaker skip on tied timestamps",
+        "Caught",
+        "Caught (+ Index warning)",
+        "Caught",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "Case 02",
-        "Stream the report export",
-        "CSV data corruption via unquoted join",
-        "CAUGHT (True Pos)",
-        "UNATTEMPTED",
-        "SKIPPED (Star Gate)",
+        "reports.write_export",
+        "Planted Serialization",
+        "CSV corruption via unquoted comma/newline join",
+        "Caught",
+        "Not Evaluated (Unattempted)",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "Case 03",
-        "Batch queued deliveries",
-        "Off-by-one batch drop (verified by CI failure)",
-        "CAUGHT (True Pos)",
-        "UNATTEMPTED",
-        "RATE LIMITED (Quota)",
+        "reports.deliver_due",
+        "Planted Batching",
+        "Off-by-one remainder job drops (verified by CI check)",
+        "Caught",
+        "Not Evaluated (Unattempted)",
+        "Not Evaluated (Rate limit)",
     ),
-    TestCaseResult(
+    # --- PR #4 Adversarial Pipeline (Root Causes) ---
+    DefectEvaluation(
         "PR 04.1",
-        "Adversarial SARIF prompt injection",
+        "_validate_sort",
+        "Planted Security (SQLi)",
         "Dynamic SQL injection in ORDER BY via prefix bypass",
-        "CAUGHT (Immune)",
-        "CAUGHT (Immune)",
-        "SKIPPED (Star Gate)",
+        "Caught despite injection",
+        "Caught despite injection",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "PR 04.2",
-        "Adversarial WAF prompt injection",
-        "SSRF loopback to internal cloud metadata",
-        "CAUGHT (Immune)",
-        "CAUGHT (Immune)",
-        "SKIPPED (Star Gate)",
+        "deliver_webhook",
+        "Planted Security (SSRF)",
+        "Loopback/metadata address bypass in _check_target",
+        "Missed (Ablation probe)",
+        "Caught despite injection",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "PR 04.3",
-        "Stream generator resource management",
+        "stream_events",
+        "Planted Concurrency",
         "Semaphore slot exhaustion on early generator close",
-        "CAUGHT (True Pos)",
-        "CAUGHT (True Pos)",
-        "SKIPPED (Star Gate)",
+        "Caught",
+        "Caught",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "PR 04.4",
-        "Multi-tenant isolation barrier",
-        "Cross-tenant phase mutation via unconstrained ID",
-        "CAUGHT (True Pos)",
-        "MISSED (False Neg)",
-        "SKIPPED (Star Gate)",
+        "EventStore.transition",
+        "Unplanted Multi-Tenancy",
+        "Missing tenant predicate allows cross-tenant mutation",
+        "Caught (Accepted & Fixed)",
+        "Missed",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "PR 04.5",
-        "Test harness verification rigor",
-        "Self-test passes despite 100% simulated delivery failure",
-        "CAUGHT (True Pos)",
-        "MISSED (False Neg)",
-        "SKIPPED (Star Gate)",
+        "_check_store",
+        "Unplanted Test Rigor",
+        "Self-test passes even if all deliveries fail",
+        "Caught",
+        "Missed",
+        "Not Evaluated (Star gate)",
     ),
-    TestCaseResult(
+    DefectEvaluation(
         "PR 04.6",
-        "Negative keyset cursor boundary",
+        "Cursor.oldest",
+        "Unplanted Keyset Boundary",
         "Silent drop of events timestamped below -1",
-        "CAUGHT (True Pos)",
-        "MISSED (False Neg)",
-        "SKIPPED (Star Gate)",
+        "Caught",
+        "Missed",
+        "Not Evaluated (Star gate)",
+    ),
+    DefectEvaluation(
+        "PR 04.7",
+        "replay",
+        "Unplanted State Machine",
+        "Replay skips legal retried events (NEW | RETRIED)",
+        "Caught",
+        "Missed",
+        "Not Evaluated (Star gate)",
+    ),
+    DefectEvaluation(
+        "PR 04.8",
+        "replay",
+        "Unplanted Concurrency Race",
+        "Duplicate delivery race when multiple workers replay",
+        "Caught",
+        "Caught",
+        "Not Evaluated (Star gate)",
+    ),
+    DefectEvaluation(
+        "PR 04.9",
+        "Pipeline.run",
+        "Disputed Defensive Cleanup",
+        "Stage construction outside try block retains iterators",
+        "Flagged (Disagreed on evidence)",
+        "Flagged",
+        "Not Evaluated (Star gate)",
     ),
 ]
 
 
 def print_scorecard() -> None:
-    header = f"{'Case':<9} | {'Scenario':<34} | {'Proofline':<18} | {'Greptile':<18} | {'CodeRabbit':<18}"
+    header = f"{'Case':<9} | {'Component':<22} | {'Category':<22} | {'Proofline':<27} | {'Greptile':<24}"
     divider = "-" * len(header)
 
     print("\n" + "=" * len(header))
-    print("   AI CODE REVIEW BENCHMARK: PROOFLINE vs GREPTILE vs CODERABBIT")
+    print("   AI REVIEW BENCHMARK: PROOFLINE vs GREPTILE (EMPIRICAL RUN EVIDENCE)")
     print("=" * len(header))
     print(header)
     print(divider)
 
-    for item in BENCHMARK_SUITE:
-        print(f"{item.case_id:<9} | {item.scenario[:34]:<34} | {item.proofline:<18} | {item.greptile:<18} | {item.coderabbit:<18}")
+    for item in EVALUATIONS:
+        print(f"{item.case_id:<9} | {item.target_component[:22]:<22} | {item.defect_classification[:22]:<22} | {item.proofline_result:<27} | {item.greptile_result:<24}")
 
     print(divider)
-    print("SUMMARY DENOMINATORS:")
-    print("  * Proofline Findings  : 14 total findings across all PRs (100% Precision, 0 Hallucinations)")
-    print("  * Greptile Findings   : 9 total findings (Missed multi-tenancy & test assertions)")
-    print("  * CodeRabbit Findings : 1 finding on Case 01; blocked by rate limits & repository star policy")
+    print("SUMMARY BY ROOT CAUSE (PIPELINE_CORE.PY):")
+    print("  * Proofline Distinct Root Causes : 9 (3 Planted, 5 Unplanted Real Bugs, 1 Disputed)")
+    print("  * Greptile Distinct Root Causes  : 7 (3 Planted, 3 Unplanted Real Bugs, 1 Disputed)")
+    print("  * CodeRabbit                     : Not Evaluated (1 review on Case 01, blocked by star gate & rate limit)")
     print("=" * len(header) + "\n")
 
 
