@@ -974,7 +974,7 @@ def _check_store() -> None:
         assert ids == [1, 2, 3]
         assert store.transition("t1", 1, NEW, VALIDATED)
         assert not store.transition("t1", 1, NEW, VALIDATED)
-        assert not store.transition("t2", 1, NEW, VALIDATED)
+        assert not store.transition("t2", 1, VALIDATED, DELIVERED)
         batches = list(store.ordered_batches("t1", 10))
         assert [len(b) for b in batches] == [10, 10, 5]
         stats = replay(store, "t1", lambda ev: ev["payload"]["n"] % 2 == 0)

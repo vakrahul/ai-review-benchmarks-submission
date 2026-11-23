@@ -86,17 +86,25 @@ def summary(db):
     return {"delivered": sent, "pending": waiting}
 
 
-def query_analytics_pipeline(db, columns=("id", "report", "scheduled_at"), sort_by="scheduled_at", sink_url=None):
+def query_analytics_pipeline(db, columns=("id", "report", "scheduled_at"), sort_by="scheduled_at", sink_url=None, allowed_hosts=("localhost", "127.0.0.1", "api.internal.local")):
     """Executes dynamic analytical query projection and optionally dispatches to webhook sink."""
+    from urllib.parse import urlparse
     from analytics import DynamicQueryCompiler, WebhookDeliveryDispatcher
 
     compiler = DynamicQueryCompiler()
     query, params = compiler.build_filtered_query(columns=columns, sort_by=sort_by)
     results = db.execute(query, params).fetchall()
 
-    if sink_url:
-        dispatcher = WebhookDeliveryDispatcher()
-        dispatcher.dispatch_payload(sink_url, {"records": results, "count": len(results)})
+    records = [dict(r) if hasattr(r, "keys") else list(r) for r in results]
 
-    return results
+    if sink_url:
+        parsed = urlparse(sink_url)
+        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").lower() not in allowed_hosts:
+            raise ValueError(f"Destination sink not in approved hosts: {sink_url}")
+        dispatcher = WebhookDeliveryDispatcher()
+        status = dispatcher.dispatch_payload(sink_url, {"records": records, "count": len(records)})
+        if not status:
+            raise RuntimeError(f"Webhook dispatch failed to destination: {sink_url}")
+
+    return records
 
